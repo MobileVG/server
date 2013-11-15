@@ -18,8 +18,8 @@ def main(argv):
     self_folder = os.path.dirname(os.path.abspath(__file__))
     os.environ['VG_ROOT'] = self_folder
     os.environ['VG_ENV'] = argv[0]
-    from vg import start_server
-    start_server()
+    import vg
+    vg.start_server()
 
 if __name__ == '__main__':
     main(sys.argv[1:])

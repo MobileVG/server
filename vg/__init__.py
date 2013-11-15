@@ -4,6 +4,7 @@ __all__ = ['app', 'db', 'start_server']
 
 from .gv import app, db
 
+
 def start_server():
     wsgi = app.config.get('WSGI', 'gevent')
     host = app.config.get('SERVER_HOST', '')

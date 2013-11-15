@@ -34,7 +34,12 @@ nosetests.xml
 .mr.developer.cfg
 .project
 .pydevproject
+*.iml
+.idea
 
 # cfg
 config/debug*.cfg
 config/local*.cfg
+
+# local
+local*.py

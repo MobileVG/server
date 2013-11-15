@@ -8,11 +8,5 @@ from ..util import json_api
 
 mod = Blueprint('PubPages', __name__)
 
-@mod.route('/test')
-@json_api
-def test():
-    email = request.args['email']
-    name = request.args.get('name', '')
-    with db.transaction():
-        return create_developer(g.context, email, pwd='pwd', name=name)
+
         
