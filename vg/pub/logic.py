@@ -38,12 +38,12 @@ def get_developer(session, uid):
 
 # app
 
-def app_exists(session, app_id):
-    q = session.query(App).filter(App.id == app_id)
+def app_exists(session, app):
+    q = session.query(App).filter(App.id == app)
     return session.query(q.exists()).scalar()
 
 def create_app(session, uid, name=''):
-    def _gen_app_id():
+    def gen_app_id():
         for i in xrange(1000):
             app_id = '%s.%s' % (uid, util.randstr(4))
             if not app_exists(session, app_id):
@@ -51,7 +51,7 @@ def create_app(session, uid, name=''):
         raise VGError(E_ILLEGAL_ID, "Can't gen app_id")
 
     now = util.now()
-    app_id = _gen_app_id()
+    app_id = gen_app_id()
     secret = util.randstr(32)
     app = App(id=app_id,
               created_at=now,
@@ -63,4 +63,24 @@ def create_app(session, uid, name=''):
     session.add(app)
     return app
 
+def get_app(session, app):
+    return session.query(App).get(app)
+
+
+# category
+
+def category_exists(session, app, category):
+    q = session.query(Category).filter(Category.app == app) \
+            .filter(Category.id == category)
+    return session.query(q.exists()).scalar()
+
+def create_category(session, app, category, name, desc=''):
+    if category_exists(session, app, category):
+        raise VGError(E_ILLEGAL_ID)
+    now = util.now()
+    category = Category(app=app, id=category,
+                        created_at=now, updated_at=now,
+                        name=util.mtext(name), desc=util.mtext(desc))
+    session.add(category)
+    return category
 

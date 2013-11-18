@@ -7,6 +7,9 @@ from flask import request, g
 from . import util
 from .util import UnicodeSupport
 from .errors import *
+from .gv import db
+from .pub import get_app, developer_exists
+
 
 _deskey = pyDes.des(str('FOhR1VER'), pyDes.CBC, str('\0\0\0\0\0\0\0\0'),
                     pad=None,
@@ -39,14 +42,15 @@ class Ticket(UnicodeSupport):
 
         bytes = util.parse_base64(s)
         s = unicode(_deskey.decrypt(bytes, padmode=pyDes.PAD_PKCS5))
-        ss = s.split('@')
+        ss = s.split('@', 1)
         dt = util.parse_iso_time(ss[0])
         uid = ss[1]
         return Ticket(uid, dt)
 
 
 class Context(object):
-    def __init__(self, uid, accessed_at=None):
+    def __init__(self, app, uid, accessed_at=None):
+        self.app = app
         self.uid = uid
         self.accessed_at = accessed_at or util.now()
 
@@ -61,12 +65,39 @@ class Context(object):
 
     @staticmethod
     def from_request():
-        try:
-            t = Ticket.decode(request.headers.get('X-VG-Ticket', None))
-            # TODO: check uid exists
-            return Context(t.uid if t is not None else None)
-        except:
-            return Context(None)
+        if '/_dev' in request.path:
+            return
+
+        from .buy import user_exists
+
+        app = request.headers.get('X-VG-App', None)
+        secret = request.headers.get('X-VG-Secret', None)
+        t = Ticket.decode(request.headers.get('X-VG-Ticket', None))
+        uid = t.uid if t is not None else None
+
+        if not app or not secret:
+            raise VGError(E_ILLEGAL_APP)
+
+
+        with db.open_session() as session:
+            # check app
+            app1 = get_app(session, app)
+            if app1.secret != secret:
+                raise VGError(E_ILLEGAL_APP)
+
+            # check uid
+            if uid is not None:
+                if util.is_developer_uid(uid):
+                    if not developer_exists(session, uid):
+                        raise VGError(E_ILLEGAL_USER)
+                    if app1.owner != uid:
+                        raise VGError(E_PERM)
+
+                elif util.is_user_uid(uid) \
+                    and not user_exists(session, uid):
+                    raise VGError(E_ILLEGAL_USER)
+
+        return Context(app, uid)
 
 
 def need_developer(f):
@@ -76,4 +107,15 @@ def need_developer(f):
         if not ctx.is_developer():
             raise VGError(E_PERM)
         return f(*args, **kwargs)
+
+    return decorator
+
+def need_user(f):
+    @functools.wraps(f)
+    def decorator(*args, **kwargs):
+        ctx = g.context
+        if not ctx.is_user():
+            raise VGError(E_PERM)
+        return f(*args, **kwargs)
+
     return decorator

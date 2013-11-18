@@ -82,29 +82,55 @@ def mtext(s):
 def parse_json(s):
     return json.loads(s)
 
+def parse_json_dict(s):
+    return json.loads(s) if s is not None and s != '' else dict()
 
-def to_json_obj(obj, includes=None, excludes=None):
+
+def to_json_obj(obj, col_filter=None):
     if isinstance(obj, datetime.datetime):
         return format_iso_datetime(obj)
     elif hasattr(obj, 'to_json_obj'):
         return to_json_obj(
-            obj.to_json_obj(includes=includes, excludes=excludes),
-            includes=includes, excludes=excludes)
+            obj.to_json_obj(col_filter=col_filter), col_filter=col_filter)
     elif type(obj) is dict:
-        return {k: to_json_obj(v, includes=includes, excludes=excludes) \
+        return {k: to_json_obj(v, col_filter=col_filter) \
                 for k, v in obj.items()}
     elif type(obj) is list or type(obj) is set \
         or type(obj) is InstrumentedList:
-        return [to_json_obj(v, includes=includes, excludes=excludes) \
+        return [to_json_obj(v, col_filter=col_filter) \
                 for v in obj]
     else:
         return obj
 
-
-def to_json(v, includes=None, excludes=None, human=True):
+def to_json(v, col_filter=None, human=True):
     indent = True if human else None
-    v1 = to_json_obj(v, includes=includes, excludes=excludes)
+    v1 = to_json_obj(v, col_filter=col_filter)
     return u_(json.dumps(v1, indent=indent))
+
+
+class ColumnFor(object):
+    def __init__(self, cls, includes=None, excludes=None):
+        self.cls = cls
+        self.includes = includes
+        self.excludes = excludes
+
+class ColumnFilter(object):
+    def __init__(self, *cfs):
+        self.cls_for = dict()
+        for cf in cfs:
+            self.cls_for[cf.cls] = cf
+
+    def __call__(self, obj, col):
+        cf = self.cls_for.get(type(obj), None)
+        if cf is None:
+            return True
+        if cf.excludes is not None:
+            if col in cf.excludes:
+                return False
+        if cf.includes is not None:
+            if col not in cf.includes:
+                return False
+        return True
 
 
 # list
