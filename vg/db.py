@@ -4,10 +4,27 @@ __all__ = ['create_db']
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
-from sqlalchemy.types import TypeDecorator, TEXT
+from sqlalchemy.types import TypeDecorator, TEXT, VARCHAR
 import json
+from .util import u_, MText
+from . import util
 
-class JSONObject(TypeDecorator):
+class StringsType(TypeDecorator):
+    impl = VARCHAR
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return ''
+        if type(value) is not list:
+            raise ValueError("value is not list")
+        return ','.join(u_(value))
+
+    def process_result_value(self, value, dialect):
+        if value is None or value == '':
+            return list()
+        else:
+            return u_(value).split(',')
+
+class JSONObjectType(TypeDecorator):
     impl = TEXT
 
     def process_bind_param(self, value, dialect):
@@ -23,13 +40,13 @@ class JSONObject(TypeDecorator):
         else:
             return json.loads(value)
 
-class JSONArray(TypeDecorator):
+class JSONArrayType(TypeDecorator):
     impl = TEXT
 
     def process_bind_param(self, value, dialect):
         if value is None:
             return ''
-        if type(value) is not list or type(value) is not set:
+        if type(value) is not list and type(value) is not set:
             raise ValueError("value is not list")
         return json.dumps(value)
 
@@ -38,6 +55,23 @@ class JSONArray(TypeDecorator):
             return list()
         else:
             return json.loads(value)
+
+class MTextType(TypeDecorator):
+    impl = TEXT
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if type(value) is not MText:
+            raise ValueError("value is not MText")
+        return util.to_json(value, human=False)
+
+    def process_result_value(self, value, dialect):
+        if value is None or value == '':
+            return None
+        else:
+            d = json.loads(value)
+            return MText(d)
 
 class DB(object):
     def __init__(self, url):

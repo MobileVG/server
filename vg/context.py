@@ -49,9 +49,10 @@ class Ticket(UnicodeSupport):
 
 
 class Context(object):
-    def __init__(self, app, uid, accessed_at=None):
+    def __init__(self, app, uid, device, accessed_at=None):
         self.app = app
         self.uid = uid
+        self.device = device
         self.accessed_at = accessed_at or util.now()
 
     def is_developer(self):
@@ -62,6 +63,12 @@ class Context(object):
 
     def is_login(self):
         return self.uid is not None
+
+    def is_android(self):
+        return True # TODO: impl
+
+    def is_ios(self):
+        return False # TODO: impl
 
     @staticmethod
     def from_request():
@@ -74,6 +81,7 @@ class Context(object):
         secret = request.headers.get('X-VG-Secret', None)
         t = Ticket.decode(request.headers.get('X-VG-Ticket', None))
         uid = t.uid if t is not None else None
+        device = request.headers.get('X-VG-Device', '')
 
         if not app or not secret:
             raise VGError(E_ILLEGAL_APP)
@@ -97,7 +105,7 @@ class Context(object):
                     and not user_exists(session, uid):
                     raise VGError(E_ILLEGAL_USER)
 
-        return Context(app, uid)
+        return Context(app, uid, device)
 
 
 def need_developer(f):
@@ -105,6 +113,16 @@ def need_developer(f):
     def decorator(*args, **kwargs):
         ctx = g.context
         if not ctx.is_developer():
+            raise VGError(E_PERM)
+        return f(*args, **kwargs)
+
+    return decorator
+
+def need_buyer(f):
+    @functools.wraps(f)
+    def decorator(*args, **kwargs):
+        ctx = g.context
+        if not (not ctx.is_login() or ctx.is_user()):
             raise VGError(E_PERM)
         return f(*args, **kwargs)
 

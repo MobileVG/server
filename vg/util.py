@@ -6,7 +6,7 @@ from dateutil import tz
 import rstr
 import json
 import functools
-from flask import Response
+from flask import Response, request
 from sqlalchemy.orm.collections import InstrumentedList
 import base64
 from .errors import VGError, E_UNKNOWN
@@ -58,6 +58,11 @@ def parse_iso_time(s, utc=True):
     else:
         return dt.replace(tzinfo=tz.tzlocal())
 
+def epoch_millis(dt=None):
+    if dt is None:
+        dt = now()
+    return int(round(float(dt.strftime('%s.%f')),3)*1000)
+
 # random
 _RSTRSET = '%s%s%s' % (string.ascii_lowercase,
                        string.ascii_uppercase, string.digits)
@@ -67,23 +72,65 @@ def randstr(len):
     return rstr.rstr(_RSTRSET, len)
 
 # Multiple lang text
-def mtext(s):
-    if s is None:
-        return {'def': ''}
-    elif isinstance(s, basestring):
-        return {'def': u_(s)}
-    elif type(s) is dict:
-        return s
-    else:
-        raise ValueError()
+
+class MText(UnicodeSupport):
+    def __init__(self, o, **kwargs):
+        self.texts = dict()
+        if o is None:
+            self.default = ''
+        elif isinstance(o, basestring):
+            self.default = u_(o)
+        elif isinstance(o, dict):
+            for k, v in o.items():
+                self[k] = v
+        else:
+            raise ValueError()
+
+        for k, v in kwargs.items():
+            self[k] = v
+
+
+    def __unicode__(self):
+        return u_(to_json(self.texts, human=False))
+
+    def __eq__(self, other):
+        if self is other:
+            return True
+        if not isinstance(other, MText):
+            return False
+        return self.texts == other.texts
+
+    def to_json_obj(self, col_filter=None):
+        return self.texts
+
+    @property
+    def default(self):
+        return self.texts.get('def', '')
+
+    @default.setter
+    def default(self, x):
+        if not isinstance(x, basestring):
+            raise ValueError("Illegal default value for mlang")
+        self.texts['def'] = u_(x)
+
+    def __getattr__(self, name):
+        return self.__getitem__(name)
+
+    def __getitem__(self, item):
+        return self.texts[item] if item in self.texts else self.default
+
+    def __setitem__(self, key, value):
+        self.texts[u_(key)] = u_(value)
+
 
 # JSON
 
 def parse_json(s):
     return json.loads(s)
 
-def parse_json_dict(s):
-    return json.loads(s) if s is not None and s != '' else dict()
+
+def parse_json_dict(s, default=None):
+    return json.loads(s) if s is not None and s != '' else default
 
 
 def to_json_obj(obj, col_filter=None):
@@ -102,6 +149,7 @@ def to_json_obj(obj, col_filter=None):
     else:
         return obj
 
+
 def to_json(v, col_filter=None, human=True):
     indent = True if human else None
     v1 = to_json_obj(v, col_filter=col_filter)
@@ -114,16 +162,22 @@ class ColumnFor(object):
         self.includes = includes
         self.excludes = excludes
 
+
 class ColumnFilter(object):
-    def __init__(self, *cfs):
+    def __init__(self, parent, *cfs):
+        self.parent = parent
         self.cls_for = dict()
         for cf in cfs:
             self.cls_for[cf.cls] = cf
 
     def __call__(self, obj, col):
-        cf = self.cls_for.get(type(obj), None)
+        cf = self.cls_for.get(type(obj))
         if cf is None:
-            return True
+            if self.parent is not None:
+                return self.parent(obj, col)
+            else:
+                return True
+
         if cf.excludes is not None:
             if col in cf.excludes:
                 return False
@@ -132,10 +186,15 @@ class ColumnFilter(object):
                 return False
         return True
 
+    def special(self, *cfs):
+        return ColumnFilter(self, *cfs)
 
 # list
 def as_list(v):
-    return v if isinstance(v, list) else [v]
+    if isinstance(v, InstrumentedList):
+        return [x for x in v]
+    else:
+        return v if isinstance(v, list) else [v]
 
 
 def list_get(l, idx, default=None):
@@ -184,5 +243,51 @@ def is_developer_uid(uid):
 
 def is_user_uid(uid):
     return uid.startswith('u')
+
+# parse
+def parse_int(s, default=None):
+    return int(s) if s else default
+
+def parse_bool(s, default=None):
+    s = u_(s).upper()
+    if s in ['1', 'T', 'TRUE', 'YES', 'Y']:
+        return True
+    elif s in ['0', 'F', 'FALSE', 'NO', 'N']:
+        return False
+    else:
+        raise ValueError()
+
+def parse_strings(s, default=','):
+    return s.split(',') if s else []
+
+def parse_paging(s, default_count_per_page=20, max_count_per_page=100):
+    ss = parse_strings(s, ',')
+    if len(ss) == 0:
+        t = [1, default_count_per_page]
+    elif len(ss) == 1:
+        t = [parse_int(ss[0], 1), default_count_per_page]
+    else:
+        t = [parse_int(ss[0], 1), parse_int(ss[1], default_count_per_page)]
+
+    if t[0] < 1:
+        t[0] = 1
+    if t[1] > max_count_per_page:
+        t[1] = max_count_per_page
+
+    return (t[0], t[1])
+
+
+# request args to dict
+def request_args_as_dict(*keys):
+    args = request.args
+    d = dict()
+    for key in keys:
+        if key in args:
+            v = args.get(key, None)
+            if v is not None:
+                d[key] = v
+    return d
+
+
 
 
