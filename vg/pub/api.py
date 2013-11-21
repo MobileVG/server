@@ -97,7 +97,7 @@ def create_goods_api():
     second_currency = util.parse_int(args.get('second_currency', None))
     real_money = MText(args.get('real_money', ''))
     pay_info = util.parse_json_dict(args.get('pay_info'), {})
-    discount = util.parse_json_dict(args.get('discount'), None)
+    discount = util.parse_float(args.get('discount'), default=float(1))
     consumable = util.parse_bool(args['consumable'])
     limit_per_user = util.parse_int(args.get('limit_per_user'), 0)
     app_min_version_ard = util.parse_int(args.get('app_min_version_ard'), 0)
@@ -106,7 +106,6 @@ def create_goods_api():
     app_max_version_ios = util.parse_int(args.get('app_max_version_ios'), 0)
     content_type = util.parse_int(args['content_type'])
     content = args.get('content', '')
-    subs = util.parse_strings(args.get('subs', ''))
 
 
     ctx = g.context
@@ -134,8 +133,7 @@ def create_goods_api():
                       app_min_version_ios=app_min_version_ios,
                       app_max_version_ios=app_max_version_ios,
                       content_type=content_type,
-                      content=content,
-                      subs=subs,)
+                      content=content,)
         goods = create_goods(session, goods)
         return util.to_json_obj(goods, col_filter=COLUMN_FILTER)
 

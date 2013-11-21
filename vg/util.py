@@ -6,7 +6,8 @@ from dateutil import tz
 import rstr
 import json
 import functools
-from flask import Response, request
+from flask import request
+from werkzeug.wrappers import Response
 from sqlalchemy.orm.collections import InstrumentedList
 import base64
 from .errors import VGError, E_UNKNOWN
@@ -193,8 +194,12 @@ class ColumnFilter(object):
 def as_list(v):
     if isinstance(v, InstrumentedList):
         return [x for x in v]
+    elif type(v) is list:
+        return v
+    elif type(v) is set:
+        return list(v)
     else:
-        return v if isinstance(v, list) else [v]
+        return [v]
 
 
 def list_get(l, idx, default=None):
@@ -216,7 +221,7 @@ def json_api(f):
             ro = {'code': e.code, 'error_msg': e.msg}
             #except:
         #    ro = {'code':E_UNKNOWN, 'error_msg':'Unknown error'}
-        return Response(to_json(ro, human=True), \
+        return Response(to_json(ro, human=True),\
                         content_type=JSON_CONTENT_TYPE)
 
     return decorator
@@ -249,6 +254,8 @@ def parse_int(s, default=None):
     return int(s) if s else default
 
 def parse_bool(s, default=None):
+    if (s is None):
+        return default
     s = u_(s).upper()
     if s in ['1', 'T', 'TRUE', 'YES', 'Y']:
         return True
@@ -256,6 +263,9 @@ def parse_bool(s, default=None):
         return False
     else:
         raise ValueError()
+
+def parse_float(s, default=None):
+    return float(s) if s else default
 
 def parse_strings(s, default=','):
     return s.split(',') if s else []
@@ -288,6 +298,60 @@ def request_args_as_dict(*keys):
                 d[key] = v
     return d
 
+# currency
+def parse_real_money(s, default=None):
+    # return (cs, amount)
+    if s:
+        cs = s[0:3]
+        amount = float(s[3:])
+        return (cs, amount)
+    else:
+        return default
 
 
+def discount_currency(c, d):
+    if d <= 0.0:
+        return 0
+    else:
+        return long(round(c * d))
+
+def discount_real_money(real_money, d):
+    def discount_tuple(t):
+        if d <= 0.0:
+            return (t[0], 0.0)
+        else:
+            return (t[0], d * t[1])
+
+    def discount_str(rms):
+        discounted = []
+        for rms0 in parse_strings(rms, ','):
+            rms0 = rms0.strip()
+            if rms0:
+                rm = parse_real_money(rms, default=('', float(1)))
+                rm = discount_tuple(rm)
+                discounted.append('%s%s' % rm)
+        return ','.join(discounted)
+
+    real_money = u_(real_money)
+    if isinstance(real_money, unicode):
+        return discount_str(real_money)
+    elif type(real_money) is list or type(real_money) is set:
+        return [discount_real_money(x, d) for x in real_money]
+    elif type(real_money) is dict:
+        return {k:discount_real_money(v, d) for k, v in real_money.items()}
+    elif isinstance(real_money, MText):
+        return discount_real_money(real_money.texts, d)
+    else:
+        raise ValueError()
+
+# dict
+def dict_modify_value(d, k, f):
+    v = d.get(k, None)
+    d[k] = f(v)
+    return d
+
+# Ref
+class Ref(object):
+    def __init__(self, v = None):
+        self.v = v
 

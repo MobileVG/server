@@ -49,10 +49,13 @@ class Ticket(UnicodeSupport):
 
 
 class Context(object):
-    def __init__(self, app, uid, device, accessed_at=None):
+    def __init__(self, app, uid, uid_human, device, locale, ip, accessed_at=None):
         self.app = app
         self.uid = uid
+        self.uid_human = uid_human
         self.device = device
+        self.locale = locale
+        self.ip = ip
         self.accessed_at = accessed_at or util.now()
 
     def is_developer(self):
@@ -81,7 +84,10 @@ class Context(object):
         secret = request.headers.get('X-VG-Secret', None)
         t = Ticket.decode(request.headers.get('X-VG-Ticket', None))
         uid = t.uid if t is not None else None
+        uid_human = ''
         device = request.headers.get('X-VG-Device', '')
+        locale = '' # TODO: get
+        ip = request.remote_addr
 
         if not app or not secret:
             raise VGError(E_ILLEGAL_APP)
@@ -105,7 +111,9 @@ class Context(object):
                     and not user_exists(session, uid):
                     raise VGError(E_ILLEGAL_USER)
 
-        return Context(app, uid, device)
+                # TODO: get uid_human
+
+        return Context(app, uid, uid_human, device, locale, ip)
 
 
 def need_developer(f):

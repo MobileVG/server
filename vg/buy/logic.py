@@ -14,7 +14,7 @@ def user_exists(session, uid, with_disabled=False):
     return session.query(q.exists()).scalar()
 
 
-def get_user(session, uid, with_disabled=False, with_assets=True):
+def get_user(session, uid, with_disabled=False, with_goods=True):
     q = session.query(User).filter(User.id == uid)
     if not with_disabled:
         q = q.filter(User.disabled_at == None)
@@ -38,7 +38,7 @@ def identify_user(session, app, app_uid, human='', app_data=None):
                     human=human, app_data=app_data,
                     primary_currency=init_primary_currency,
                     second_currency=init_second_currency,
-                    assets=dict())
+                    goods={})
         session.add(user)
         session.flush()
 
@@ -66,7 +66,6 @@ def query_goods(session, app, category, **kwargs):
     search = kwargs.get('search', '').strip()
     sort = kwargs.get('sort', SORT_PUBLISH)
     paging = util.parse_paging(kwargs.get('paging', None))
-
 
     q = session.query(Goods).filter(Goods.app == app \
         and Goods.disabled_at != None)
@@ -106,6 +105,8 @@ def query_goods(session, app, category, **kwargs):
     else:
         q = q.order_by(desc(Goods.created_at))
 
+    # TODO: app version
+
     # paging
     q = q.offset((paging[0] - 1) * paging[1]).limit(paging[1])
 
@@ -113,9 +114,261 @@ def query_goods(session, app, category, **kwargs):
     return util.as_list(q.all())
 
 
+def get_goods(session, goods_id):
+    return session.query(Goods).get(goods_id)
+
+
+def list_goods(session, goods_ids, cts=None):
+    q = session.query(Goods) \
+        .filter(Goods.id.in_(goods_ids)) \
+        .filter(Goods.disabled_at == None)
+    if cts:
+        q = q.filter(Goods.content_type.in_(cts))
+    return util.as_list(q.all())
+
+
+def _expand_goods(session, goods_ids, cts=None):
+    # return {good_id: goods} with subs
+    d = dict()
+    goods_list = list_goods(session, goods_ids, cts=cts)
+    sub_ids = set()
+    for goods in goods_list:
+        if goods.id not in d:
+            d[goods.id] = goods
+            if goods.is_package:
+                for k in goods.subs.keys():
+                    sub_ids.add(k)
+    if sub_ids:
+        sub_goods_list = list_goods(session, util.as_list(sub_ids), cts=cts)
+        for sub_goods in sub_goods_list:
+            if sub_goods.id not in d:
+                d[sub_goods.id] = sub_goods
+    return d
+
+
 def attach_info_to_goods_objs(session, ctx, goods_objs):
     # TODO: ...
     pass
+
+
+def get_assets(session, uid):
+    user = get_user(session, uid, with_goods=True)
+    return user.assets if user is not None else None
+
+
+def _buyable(session, ctx, cost_type, goods_id, count, assets,
+             expanded_goods):
+    def buyable0(goods_id0, count0, for_sub):
+        goods0 = expanded_goods[goods_id0]
+
+        # check paid_type
+        if goods0.paid_type == Goods.PT_ANON_FREE:
+            return E_ILLEGAL_PAID_TYPE
+
+        # check count
+        if not goods0.is_package:
+            if not assets.goods_limit(goods_id0, count0,
+                                      goods0.limit_per_user):
+                return E_TOO_MANY_GOODS
+
+        # check currency
+        if not for_sub:
+            if cost_type == History.CC_PRIMARY_CURRENCY:
+                dpc = goods0.discounted_primary_currency
+                if dpc is None:
+                    return E_ILLEGAL_COST_TYPE
+                if not assets.primary_currency_enough(dpc * count0):
+                    return E_CURRENCY_NOT_ENOUGH
+            elif cost_type == History.CC_SECOND_CURRENCY:
+                dsc = goods0.discounted_second_currency
+                if dsc is None:
+                    return E_ILLEGAL_COST_TYPE
+                if not assets.second_currency_enough(dsc * count0):
+                    return E_CURRENCY_NOT_ENOUGH
+            elif cost_type == History.CC_REAL_MONEY:
+                drm = goods0.discounted_real_money
+                if drm is None:
+                    return E_ILLEGAL_COST_TYPE
+
+        return E_OK
+
+    if not ctx.is_user():
+        return False
+
+    goods = expanded_goods[goods_id]
+    if not goods.is_package:
+        return buyable0(goods_id, count, False)
+    else:
+        cr = buyable0(goods_id, count, False)
+        if cr != E_OK:
+            return cr
+        cr = E_TOO_MANY_GOODS
+        subs = goods.subs
+        for sub_id, sub_count in subs.items():
+            cr = buyable0(sub_id, sub_count * count, True)
+            if cr == E_OK:
+                cr = E_OK
+        return cr
+
+
+def buyable(session, ctx, cost_type, goods_id, count):
+    assets = get_assets(session, ctx.uid)
+    if assets is None:
+        raise VGError(E_ILLEGAL_USER)
+    expanded_goods = _expand_goods(session, [goods_id])
+    cr = _buyable(session, ctx, cost_type, goods_id, count, assets,
+                  expanded_goods)
+    return cr == E_OK
+
+
+def _gen_history_id(goods_id, dt, type):
+    return 'h%s%s.%s%s' % \
+           (type, goods_id, util.epoch_millis(dt), util.randstr(4))
+
+
+def buy(session, ctx, cost_type, goods_id, count,
+        app_data=None, cost_real_money=None, pay_channel=None, pay_id=None):
+    def buy0(goods_id0, count0, parent_goods_id):
+        goods0 = expanded_goods[goods_id0]
+
+        # modify currency
+        if parent_goods_id is None: # is_package
+            if cost_type == History.CC_PRIMARY_CURRENCY:
+                assets.incr_primary_currency(
+                    -goods0.discounted_primary_currency * count)
+            elif cost_type == History.CC_SECOND_CURRENCY:
+                assets.incr_second_currency(
+                    -goods0.discounted_second_currency * count)
+
+        # modify assets
+        if not goods0.is_package:
+            assets.incr_goods(goods_id0, count0, goods0.limit_per_user)
+
+        # update sales_count
+        session.query(Goods).filter(Goods.id == goods0.id) \
+            .update({'sales_count': Goods.sales_count + count0})
+
+        # save to history
+        h = History()
+        h.id = _gen_history_id(goods0.id, now, History.TYPE_RECEIPT)
+        h.app = ctx.app
+        h.category = goods0.category
+        h.buyer = ctx.uid
+        h.buyer_human = ctx.uid_human
+        h.goods = goods0.id
+        h.parent_goods = parent_goods_id
+        h.count = count0
+        h.created_at = now
+        h.type = History.TYPE_RECEIPT
+        h.app_data = app_data or ''
+
+        if parent_goods_id is None: # not for sub
+            cc = 0
+            crmc = ''
+            crma = 0.0
+            if cost_type == History.CC_PRIMARY_CURRENCY:
+                cc = goods0.discounted_primary_currency
+            elif cost_type == History.CC_SECOND_CURRENCY:
+                cc = goods0.discounted_second_currency
+            elif cost_type == History.CC_REAL_MONEY:
+                if cost_real_money is None:
+                    raise VGError(E_ILLEGAL_ARG, "Missing real_money")
+                rm = util.parse_real_money(cost_real_money, ('', 0.0))
+                crmc = rm[0]
+                crma = rm[1]
+            h.cost_currency_type = cost_type
+            h.cost_currency = cc
+            h.cost_real_money_cs = crmc
+            h.cost_real_money_amount = crma
+            h.discount = goods0.discount
+        else:
+            h.cost_currency_type = cost_type
+            h.cost_currency = 0
+            h.cost_real_money_cs = ''
+            h.cost_real_money_amount = 0.0
+            h.discount = 1.0
+
+        h.pay_channel = pay_channel or ''
+        h.pay_id = pay_id or ''
+        h.buyer_device = ctx.device or ''
+        h.buyer_locale = ctx.locale or ''
+        h.buyer_ip = ctx.ip or ''
+        session.add(h)
+
+
+    now = util.now()
+    assets = get_assets(session, ctx.uid)
+    if assets is None:
+        raise VGError(E_ILLEGAL_USER)
+    expanded_goods = _expand_goods(session, [goods_id])
+    if not expanded_goods:
+        raise VGError(E_ILLEGAL_GOODS)
+
+    cr = _buyable(session, ctx, cost_type, goods_id, count, assets,
+                  expanded_goods)
+    if cr != E_OK:
+        raise VGError(cr)
+
+    goods = expanded_goods[goods_id]
+
+    buy0(goods_id, count, None)
+    if goods.is_package:
+        subs = goods.subs
+        for sub_id, sub_count in subs.items():
+            buy0(sub_id, count * sub_count, goods_id)
+
+    assets.save_to_user(session, ctx.uid)
+    return assets
+
+
+def _make_gc(goods):
+    if goods.content_type == Goods.CT_URL:
+        return {'url':goods.content}
+    elif goods.content_type == Goods.CT_TEXT:
+        return {'text':goods.content}
+    else:
+        return None
+
+def give_many(session, ctx, good_ids):
+
+    # Returns:
+    # {
+    #   "goods1_id":null, // NOT FOUND or content_type error or not perm
+    #   "goods2_id":{"url": "http://..."},
+    #   "goods3_id":{"text": "TEXT"}
+    # }
+
+    if not good_ids:
+        return {}
+    r = {}
+
+    assets = get_assets(session, ctx.uid) if ctx.is_user() else None
+    expanded_goods = _expand_goods(session, good_ids,
+                                   cts=[Goods.CT_URL, Goods.CT_TEXT])
+    for goods_id in good_ids:
+        gc = None
+        goods = expanded_goods.get(goods_id)
+        if goods is not None:
+            if ctx.is_user():
+                if goods.paid_type == Goods.PT_ANON_FREE:
+                    gc = _make_gc(goods)
+                else:
+                    if assets.has_goods(goods.id):
+                        gc = _make_gc(goods)
+            else:
+                if goods.paid_type == Goods.PT_ANON_FREE:
+                    gc = _make_gc(goods)
+        r[goods_id] = gc
+
+    return r
+
+
+def give_one(session, ctx, goods_id, raw=False):
+    # Returns:
+    # None or {'url':'...'} or {'text':'...'}
+    cs = give_many(session, ctx, [goods_id])
+    return cs.get(goods_id)
+
 
 
 
