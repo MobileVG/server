@@ -91,12 +91,14 @@ class Assets(JSONSupport):
     def has_goods(self, good_id):
         return self.goods.get(good_id, 0) > 0
 
-    def save_to_user(self, session, uid):
+    def save_to_user(self, session, uid, with_currency=True):
+        d = {'goods': self.goods}
+        if with_currency:
+            d['primary_currency'] = self.primary_currency
+            d['second_currency'] = self.second_currency
         session.query(User)\
             .filter(User.id == uid)\
-            .update({'primary_currency': self.primary_currency,
-                    'second_currency': self.second_currency,
-                    'goods': self.goods})
+            .update(d)
         return self
 
 

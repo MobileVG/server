@@ -2,9 +2,9 @@ from __future__ import unicode_literals, absolute_import
 from flask import Blueprint, g, request, Response, redirect
 from ..gv import db
 from .. import util
-from ..util import json_api, ColumnFilter, ColumnFor
+from ..util import u_, json_api, ColumnFilter, ColumnFor
 from .logic import *
-from ..context import need_buyer
+from ..context import need_buyer, need_user
 
 _GOODS_COLS = ['id', 'version',
                'publisher',
@@ -84,7 +84,7 @@ def query_goods_api():
 
 @mod.route('/buy/buy')
 @json_api
-@need_buyer
+@need_user
 def buy_api():
     ctx = g.context
     args = request.args
@@ -94,11 +94,13 @@ def buy_api():
     cost_real_money = args.get('cost_real_money', None)
     pay_channel = args.get('pay_channel', None)
     pay_id = args.get('pay_id', None)
+    app_data = args.get('app_data')
     with db.open_session() as session:
         assets = buy(session, ctx, cost_type, goods_id, count,
                      cost_real_money=cost_real_money,
                      pay_channel=pay_channel,
-                     pay_id=pay_id)
+                     pay_id=pay_id,
+                     app_data=app_data)
         return assets
 
 
@@ -134,6 +136,28 @@ def give_one_api():
             else:
                 return Response(response='', status=404)
 
+
+@mod.route('/buy/consume')
+@json_api
+@need_user
+def consume_api():
+    ctx = g.context
+    args = request.args
+    goods_id = u_(args['goods_id']).strip()
+    count = util.parse_int(args.get('count'), 1)
+    app_data = args.get('app_data')
+    with db.open_session() as session:
+        r = consume(session, ctx, goods_id, count, app_data=app_data)
+        return r
+
+
+@mod.route('/buy/assets')
+@json_api
+@need_user
+def get_assets_api():
+    with db.open_session() as session:
+        r = get_assets(session, g.context.uid)
+        return r
 
 
 

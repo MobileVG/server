@@ -312,6 +312,8 @@ def parse_real_money(s, default=None):
 def discount_currency(c, d):
     if d <= 0.0:
         return 0
+    elif d == 1.0:
+        return long(c)
     else:
         return long(round(c * d))
 

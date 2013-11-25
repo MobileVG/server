@@ -370,5 +370,62 @@ def give_one(session, ctx, goods_id, raw=False):
     return cs.get(goods_id)
 
 
+def consume(session, ctx, goods_id, count, app_data=None):
+    def consume0(goods_id0, count0):
+        goods0 = expanded_goods[goods_id0]
+        if not goods0.consumable:
+            raise VGError(E_GOODS_NOT_CONSUMABLE, goods_id0)
+        if not assets.goods_enough(goods_id0, count0):
+            raise VGError(E_GOODS_NOT_ENOUGH, goods_id0)
+        assets.incr_goods(goods_id0, -count0, goods.limit_per_user)
+
+        # save to history
+        h = History()
+        h.id = _gen_history_id(goods0.id, now, History.TYPE_CONSUMPTION)
+        h.app = ctx.app
+        h.category = goods0.category
+        h.buyer = ctx.uid
+        h.buyer_human = ctx.uid_human
+        h.goods = goods0.id
+        h.parent_goods = ''
+        h.count = count0
+        h.created_at = now
+        h.type = History.TYPE_CONSUMPTION
+        h.app_data = app_data or ''
+        h.cost_currency_type = 0
+        h.cost_currency = 0
+        h.cost_real_money_cs = ''
+        h.cost_real_money_amount = 0.0
+        h.discount = 1.0
+        h.pay_channel = ''
+        h.pay_id = ''
+        h.buyer_device = ctx.device or ''
+        h.buyer_locale = ctx.locale or ''
+        h.buyer_ip = ctx.ip or ''
+        session.add(h)
+
+    now = util.now()
+    assets = get_assets(session, ctx.uid)
+    if assets is None:
+        raise VGError(E_ILLEGAL_USER)
+    expanded_goods = _expand_goods(session, [goods_id])
+    if not expanded_goods:
+        raise VGError(E_ILLEGAL_GOODS)
+
+    goods = expanded_goods[goods_id]
+    if not goods.is_package:
+        consume0(goods_id, count)
+    else:
+        subs = goods.subs
+        for sub_id, sub_count in subs.items():
+            consume0(sub_id, count * sub_count)
+    assets.save_to_user(session, ctx.uid, with_currency=False)
+    return assets
+
+
+def list_history(uid, types=None):
+    # TODO: ...
+    return []
+
 
 
