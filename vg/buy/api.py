@@ -2,9 +2,12 @@ from __future__ import unicode_literals, absolute_import
 from flask import Blueprint, g, request, Response, redirect
 from ..gv import db
 from .. import util
-from ..util import u_, json_api, ColumnFilter, ColumnFor
+from ..util import u_, json_api, ColumnFilter, WithColumns
 from .logic import *
 from ..context import need_buyer, need_user
+from ..valid import ArgsSchema, AsInt, AsBool, AsJsonObj, \
+    AsList, AsPaging, NoValid, \
+    Required, Optional, All, Coerce, Length, Range
 
 _GOODS_COLS = ['id', 'version',
                'publisher',
@@ -25,20 +28,22 @@ _GOODS_COLS = ['id', 'version',
                'pay_info',
                'discount',
                'consumable',
-               'limit_per_user',
-               'app_min_version_ard',
-               'app_max_version_ard',
-               'app_min_version_ios',
-               'app_max_version_ios',
-               'content_type',
-               'content']
+               #'limit_per_user',
+               'content_type']
 
-COLUMN_FILTER = ColumnFilter(None,
-                             ColumnFor(User,
-                                       excludes=['disabled_at', 'app']),
-                             ColumnFor(Category, excludes=['app']),
-                             ColumnFor(Goods, includes=_GOODS_COLS)
-)
+_HISTORY_COLS = [
+    'app_data', 'category', 'cost', 'cost_currency_type',
+    'count', 'created_at', 'discount', 'goods', 'id',
+    'parent_goods', 'pay_channel', 'pay_id', 'type',
+]
+
+COLUMN_FILTER = ColumnFilter({
+    User: WithColumns(excludes=['disabled_at', 'app']),
+    Category: WithColumns(excludes=['app']),
+    History: WithColumns(includes=_HISTORY_COLS),
+    Goods: WithColumns(_GOODS_COLS),
+})
+
 
 mod = Blueprint('BuyAPIs', __name__)
 
@@ -46,10 +51,16 @@ mod = Blueprint('BuyAPIs', __name__)
 @mod.route('/buy/user/identify')
 @json_api
 def identify_user_api():
+    schema = ArgsSchema({
+        Required('id'): Length(min=1),
+        Optional('human'): NoValid(),
+        Optional('app_data'): AsJsonObj(),
+    })
+    args = schema.validate_request_args()
     ctx = g.context
-    uid = request.args['id']
-    human = request.args.get('human', '')
-    app_data = util.parse_json_dict(request.args.get('app_data', None), {})
+    uid = args['id']
+    human = args.get('human', '')
+    app_data = args.get('app_data', {})
     with db.open_session() as session:
         user = identify_user(session, ctx.app, uid, human=human,
                              app_data=app_data)
@@ -70,30 +81,45 @@ def list_categories_api():
 @json_api
 @need_buyer
 def query_goods_api():
+    schema = ArgsSchema({
+        Optional('category'): NoValid(),
+        Optional('paid'): AsInt(),
+        Optional('tags'): AsList(sep=','),
+        Optional('search'): NoValid(),
+        Optional('sort'): AsInt(),
+        Optional('paging'): AsPaging(),
+    })
+    args = schema.validate_request_args()
     ctx = g.context
-    category = request.args.get('category', None)
     with db.open_session() as session:
-        goods = query_goods(session, ctx.app, category,
-                            **util.request_args_as_dict('paid', 'tags',
-                                                        'search', 'sort',
-                                                        'paging'))
-        goods_objs = util.to_json_obj(goods, col_filter=COLUMN_FILTER)
-        attach_info_to_goods_objs(session, ctx, goods_objs)
+        goods = query_goods(session, ctx, **args)
+        goods_objs = util.to_json_obj(goods, col_filter=COLUMN_FILTER,
+                                      context=ctx)
+        assets = get_assets(session, ctx.uid)
+        attach_info_to_goods_objs(session, ctx, goods_objs, assets)
         return goods_objs
-
 
 @mod.route('/buy/buy')
 @json_api
 @need_user
 def buy_api():
+    schema = ArgsSchema({
+        Required('cost_type'): AsInt(),
+        Required('goods_id'): Length(min=1),
+        Optional('count'): AsInt(),
+        Optional('cost_real_money'): NoValid(),
+        Optional('pay_channel'): NoValid(),
+        Optional('pay_id'): NoValid(),
+        Optional('app_data'): NoValid(),
+    })
+    args = schema.validate_request_args()
     ctx = g.context
-    args = request.args
-    cost_type = int(args['cost_type'])
+    cost_type = args['cost_type']
     goods_id = args['goods_id']
-    count = util.parse_int(args.get('count'), 1)
-    cost_real_money = args.get('cost_real_money', None)
-    pay_channel = args.get('pay_channel', None)
-    pay_id = args.get('pay_id', None)
+    count = args.get('count', 1)
+    cost_real_money = args.get('cost_real_money')
+    pay_channel = args.get('pay_channel')
+    pay_id = args.get('pay_id')
     app_data = args.get('app_data')
     with db.open_session() as session:
         assets = buy(session, ctx, cost_type, goods_id, count,
@@ -108,8 +134,12 @@ def buy_api():
 @json_api
 @need_buyer
 def give_many_api():
+    schema = ArgsSchema({
+        Required('good_ids'): AsList(sep=','),
+    })
+    args = schema.validate_request_args()
     ctx = g.context
-    goods_ids = util.parse_strings(request.args['good_ids'], ',')
+    goods_ids = args['good_ids']
     with db.open_session() as session:
         contents = give_many(session, ctx, goods_ids)
         return contents
@@ -119,9 +149,14 @@ def give_many_api():
 @json_api
 @need_buyer
 def give_one_api():
+    schema = ArgsSchema({
+        Required('good_id'): Length(min=1),
+        Optional('raw'): AsBool(),
+    })
+    args = schema.validate_request_args()
     ctx = g.context
-    good_id = request.args['goods_id']
-    raw = util.parse_bool(request.args.get('raw'), False)
+    good_id = args['goods_id']
+    raw = args.get('raw', False)
     with db.open_session() as session:
         r = give_one(session, ctx, good_id, raw=raw)
         if not raw:
@@ -130,7 +165,8 @@ def give_one_api():
             if r is None:
                 return Response(response='', status=404)
             elif 'text' in r:
-                return Response(response=r['text'], content_type='text/plain')
+                return Response(response=r['text'],
+                                content_type='text/plain')
             elif 'url' in r:
                 return redirect(r['url'])
             else:
@@ -141,11 +177,16 @@ def give_one_api():
 @json_api
 @need_user
 def consume_api():
+    schema = ArgsSchema({
+        Required('good_id'): Length(min=1),
+        Optional('count'): AsInt(),
+        Optional('app_data'): NoValid(),
+    })
+    args = schema.validate_request_args()
     ctx = g.context
-    args = request.args
-    goods_id = u_(args['goods_id']).strip()
-    count = util.parse_int(args.get('count'), 1)
-    app_data = args.get('app_data')
+    goods_id = args['goods_id'].strip()
+    count = args.get('count', 1)
+    app_data = args.get('app_data', '')
     with db.open_session() as session:
         r = consume(session, ctx, goods_id, count, app_data=app_data)
         return r
@@ -159,5 +200,22 @@ def get_assets_api():
         r = get_assets(session, g.context.uid)
         return r
 
+
+@mod.route('/buy/history')
+@json_api
+@need_user
+def list_history_api():
+    schema = ArgsSchema({
+        Optional('type'): AsList(subtype=int, sep=','),
+        Optional('paging'): AsPaging(),
+    })
+    args = schema.validate_request_args()
+    ctx = g.context
+    types = args.get('type') or None
+    paging = args.get('paging', Paging(1, 20))
+    with db.open_session() as session:
+        histories = list_history(session, ctx.app, ctx.uid,
+                                 types=types, paging=paging)
+        return util.to_json_obj(histories, col_filter=COLUMN_FILTER)
 
 

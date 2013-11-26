@@ -10,6 +10,7 @@ from flask import request
 from werkzeug.wrappers import Response
 from sqlalchemy.orm.collections import InstrumentedList
 import base64
+from voluptuous import Schema as _Schema
 from .errors import VGError, E_UNKNOWN
 
 
@@ -59,10 +60,11 @@ def parse_iso_time(s, utc=True):
     else:
         return dt.replace(tzinfo=tz.tzlocal())
 
+
 def epoch_millis(dt=None):
     if dt is None:
         dt = now()
-    return int(round(float(dt.strftime('%s.%f')),3)*1000)
+    return int(round(float(dt.strftime('%s.%f')), 3) * 1000)
 
 # random
 _RSTRSET = '%s%s%s' % (string.ascii_lowercase,
@@ -101,7 +103,7 @@ class MText(UnicodeSupport):
             return False
         return self.texts == other.texts
 
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         return self.texts
 
     @property
@@ -134,18 +136,18 @@ def parse_json_dict(s, default=None):
     return json.loads(s) if s is not None and s != '' else default
 
 
-def to_json_obj(obj, col_filter=None):
+def to_json_obj(obj, col_filter=None, **kwargs):
     if isinstance(obj, datetime.datetime):
         return format_iso_datetime(obj)
     elif hasattr(obj, 'to_json_obj'):
-        return to_json_obj(
-            obj.to_json_obj(col_filter=col_filter), col_filter=col_filter)
+        obj1 = obj.to_json_obj(col_filter=col_filter, **kwargs)
+        return to_json_obj(obj1, col_filter=col_filter, **kwargs)
     elif type(obj) is dict:
-        return {k: to_json_obj(v, col_filter=col_filter) \
+        return {k: to_json_obj(v, col_filter=col_filter, **kwargs) \
                 for k, v in obj.items()}
     elif type(obj) is list or type(obj) is set \
         or type(obj) is InstrumentedList:
-        return [to_json_obj(v, col_filter=col_filter) \
+        return [to_json_obj(v, col_filter=col_filter, **kwargs) \
                 for v in obj]
     else:
         return obj
@@ -157,38 +159,40 @@ def to_json(v, col_filter=None, human=True):
     return u_(json.dumps(v1, indent=indent))
 
 
-class ColumnFor(object):
-    def __init__(self, cls, includes=None, excludes=None):
-        self.cls = cls
+# Columns filter
+
+class WithColumns(object):
+    def __init__(self, includes=None, excludes=None):
         self.includes = includes
         self.excludes = excludes
 
+    def __call__(self, obj, col, **kwargs):
+        if self.excludes is not None:
+            if col in self.excludes:
+                return None
+        if self.includes is not None:
+            if col not in self.includes:
+                return None
+        return col
+
 
 class ColumnFilter(object):
-    def __init__(self, parent, *cfs):
+    def __init__(self, class_filters, parent=None):
+        self.cls_filters = class_filters
         self.parent = parent
-        self.cls_for = dict()
-        for cf in cfs:
-            self.cls_for[cf.cls] = cf
 
-    def __call__(self, obj, col):
-        cf = self.cls_for.get(type(obj))
+    def __call__(self, obj, col, **kwargs):
+        cf = self.cls_filters.get(type(obj))
         if cf is None:
             if self.parent is not None:
-                return self.parent(obj, col)
+                return self.parent(obj, col, **kwargs)
             else:
-                return True
+                return col
+        else:
+            return cf(obj, col, **kwargs)
 
-        if cf.excludes is not None:
-            if col in cf.excludes:
-                return False
-        if cf.includes is not None:
-            if col not in cf.includes:
-                return False
-        return True
-
-    def special(self, *cfs):
-        return ColumnFilter(self, *cfs)
+    def special(self, class_filters):
+        return ColumnFilter(class_filters, self)
 
 # list
 def as_list(v):
@@ -221,7 +225,7 @@ def json_api(f):
             ro = {'code': e.code, 'error_msg': e.msg}
             #except:
         #    ro = {'code':E_UNKNOWN, 'error_msg':'Unknown error'}
-        return Response(to_json(ro, human=True),\
+        return Response(to_json(ro, human=True), \
                         content_type=JSON_CONTENT_TYPE)
 
     return decorator
@@ -253,50 +257,34 @@ def is_user_uid(uid):
 def parse_int(s, default=None):
     return int(s) if s else default
 
+
 def parse_bool(s, default=None):
     if (s is None):
         return default
     s = u_(s).upper()
-    if s in ['1', 'T', 'TRUE', 'YES', 'Y']:
+    if s in ['1', 'T', 'TRUE', 'YES', 'Y', 'ON']:
         return True
-    elif s in ['0', 'F', 'FALSE', 'NO', 'N']:
+    elif s in ['0', 'F', 'FALSE', 'NO', 'N', 'OFF']:
         return False
     else:
         raise ValueError()
 
-def parse_float(s, default=None):
-    return float(s) if s else default
-
-def parse_strings(s, default=','):
-    return s.split(',') if s else []
-
-def parse_paging(s, default_count_per_page=20, max_count_per_page=100):
-    ss = parse_strings(s, ',')
-    if len(ss) == 0:
-        t = [1, default_count_per_page]
-    elif len(ss) == 1:
-        t = [parse_int(ss[0], 1), default_count_per_page]
-    else:
-        t = [parse_int(ss[0], 1), parse_int(ss[1], default_count_per_page)]
-
-    if t[0] < 1:
-        t[0] = 1
-    if t[1] > max_count_per_page:
-        t[1] = max_count_per_page
-
-    return (t[0], t[1])
+def parse_strings(s, sep=','):
+    return s.split(sep) if s else []
 
 
 # request args to dict
-def request_args_as_dict(*keys):
-    args = request.args
-    d = dict()
-    for key in keys:
-        if key in args:
-            v = args.get(key, None)
-            if v is not None:
-                d[key] = v
-    return d
+def request_args_as_dict(includes=None, excludes=None):
+    def contains_arg(k):
+        if excludes is not None:
+            if k in excludes:
+                return False
+        if includes is not None:
+            if k not in includes:
+                return False
+        return True
+
+    return {k: v for k, v in request.args.items() if contains_arg(k)}
 
 # currency
 def parse_real_money(s, default=None):
@@ -316,6 +304,7 @@ def discount_currency(c, d):
         return long(c)
     else:
         return long(round(c * d))
+
 
 def discount_real_money(real_money, d):
     def discount_tuple(t):
@@ -340,7 +329,7 @@ def discount_real_money(real_money, d):
     elif type(real_money) is list or type(real_money) is set:
         return [discount_real_money(x, d) for x in real_money]
     elif type(real_money) is dict:
-        return {k:discount_real_money(v, d) for k, v in real_money.items()}
+        return {k: discount_real_money(v, d) for k, v in real_money.items()}
     elif isinstance(real_money, MText):
         return discount_real_money(real_money.texts, d)
     else:
@@ -354,6 +343,43 @@ def dict_modify_value(d, k, f):
 
 # Ref
 class Ref(object):
-    def __init__(self, v = None):
+    def __init__(self, v=None):
         self.v = v
+
+# Paging
+class Paging(UnicodeSupport):
+    def __init__(self, page, count):
+        self.page = page
+        self.count = count
+
+    def __unicode__(self):
+        return '%s,%s' % (self.page, self.count)
+
+    def __repr__(self):
+        return str(self)
+
+    def __eq__(self, other):
+        if self is other:
+            return True
+        if not isinstance(other, Paging):
+            return False
+        return self.page == other.page and self.count == other.count
+
+    @property
+    def offset(self):
+        return (self.page - 1) * self.count
+
+    @property
+    def limit(self):
+        return self.count
+
+    @staticmethod
+    def parse(s):
+        l = parse_strings(s, ',')
+        if len(l) < 2:
+            raise ValueError("Illegal paging '%s'" % s)
+        l[0] = l[0] or '1'
+        return Paging(int(l[0]), int(l[1]))
+
+
 

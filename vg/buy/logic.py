@@ -1,8 +1,9 @@
 from __future__ import unicode_literals, absolute_import
 
-from sqlalchemy import desc
+from sqlalchemy import desc, distinct
 from ..errors import *
 from .. import util
+from ..util import Paging
 from ..models import *
 from ..pub import get_app, create_currency_category
 
@@ -18,7 +19,6 @@ def get_user(session, uid, with_disabled=False, with_goods=True):
     q = session.query(User).filter(User.id == uid)
     if not with_disabled:
         q = q.filter(User.disabled_at == None)
-    print q
     return q.first()
 
 
@@ -60,14 +60,15 @@ PAID_PAID = 2
 PAID_FREE = 3
 
 
-def query_goods(session, app, category, **kwargs):
-    paid = util.parse_int(kwargs.get('paid'), PAID_ALL)
-    tags = util.parse_strings(kwargs.get('tags'))
-    search = kwargs.get('search', '').strip()
-    sort = kwargs.get('sort', SORT_PUBLISH)
-    paging = util.parse_paging(kwargs.get('paging', None))
+def query_goods(session, ctx, **opts):
+    category = opts.get('category')
+    paid = opts.get('paid', PAID_ALL)
+    tags = opts.get('tags')
+    search = opts.get('search', '').strip()
+    sort = opts.get('sort', SORT_PUBLISH)
+    paging = opts.get('paging', Paging(1, 20))
 
-    q = session.query(Goods).filter(Goods.app == app \
+    q = session.query(Goods).filter(Goods.app == ctx.app \
         and Goods.disabled_at != None)
     # category
     if category is not None:
@@ -99,16 +100,26 @@ def query_goods(session, app, category, **kwargs):
         or (Goods.publisher_info != None
             and Goods.publisher_info.like(like_str)))
 
+    # app_version
+    if ctx.app_version and ctx.app_version > 0:
+        if ctx.is_android:
+            q.filter(ctx.app_version >= Goods.app_min_version_ard) \
+                .filter(ctx.app_version <= Goods.app_max_version_ard)
+        elif ctx.is_ios:
+            q.filter(ctx.app_version >= Goods.app_min_version_ios) \
+                .filter(ctx.app_version <= Goods.app_max_version_ios)
+        else:
+            pass
+
     # sort by
     if sort == SORT_SALES:
         q = q.order_by(desc(Goods.sales_count))
     else:
         q = q.order_by(desc(Goods.created_at))
 
-    # TODO: app version
 
     # paging
-    q = q.offset((paging[0] - 1) * paging[1]).limit(paging[1])
+    q = q.offset(paging.offset).limit(paging.limit)
 
     # Query!
     return util.as_list(q.all())
@@ -145,10 +156,34 @@ def _expand_goods(session, goods_ids, cts=None):
                 d[sub_goods.id] = sub_goods
     return d
 
+def bought_batch(session, app, uid, goods_ids):
+    r = {}
+    if goods_ids:
+        q = session.query(distinct(History.goods))\
+            .filter(History.app == app) \
+            .filter(History.buyer == uid) \
+            .filter(History.goods.in_(goods_ids)) \
+            .filter(History.type == History.TYPE_RECEIPT)
+        bought_ids = set([t[0] for t in q.all()])
+        for goods_id in goods_ids:
+            r[goods_id] = bool(goods_id in bought_ids)
 
-def attach_info_to_goods_objs(session, ctx, goods_objs):
-    # TODO: ...
-    pass
+    return r
+
+
+def attach_info_to_goods_objs(session, ctx, goods_objs, assets):
+    goods_ids = [goods['id'] for goods in goods_objs]
+
+    # 'bought'
+    bought_result = bought_batch(session, ctx.app, ctx.uid, goods_ids)
+    for goods in goods_objs:
+        goods_id = goods['id']
+        b = bought_result[goods_id]
+        goods['bought'] = b
+
+    # TODO: 'buyable'
+    # TODO: 'givable'
+    return goods_objs
 
 
 def get_assets(session, uid):
@@ -323,14 +358,14 @@ def buy(session, ctx, cost_type, goods_id, count,
 
 def _make_gc(goods):
     if goods.content_type == Goods.CT_URL:
-        return {'url':goods.content}
+        return {'url': goods.content}
     elif goods.content_type == Goods.CT_TEXT:
-        return {'text':goods.content}
+        return {'text': goods.content}
     else:
         return None
 
-def give_many(session, ctx, good_ids):
 
+def give_many(session, ctx, good_ids):
     # Returns:
     # {
     #   "goods1_id":null, // NOT FOUND or content_type error or not perm
@@ -423,9 +458,18 @@ def consume(session, ctx, goods_id, count, app_data=None):
     return assets
 
 
-def list_history(uid, types=None):
-    # TODO: ...
-    return []
+def list_history(session, app, uid, types=None, **kwargs):
+    paging = kwargs.get('paging', Paging(1, 20))
+    q = session.query(History) \
+        .filter(History.app == app) \
+        .filter(History.buyer == uid)
+    if types:
+        q = q.filter(History.type.in_(util.as_list(types)))
+    q.order_by(desc(History.created_at))
+    q = q.offset(paging.offset).limit(paging.limit)
+
+    # Query!
+    return util.as_list(q.all())
 
 
 

@@ -49,13 +49,15 @@ class Ticket(UnicodeSupport):
 
 
 class Context(object):
-    def __init__(self, app, uid, uid_human, device, locale, ip, accessed_at=None):
+    def __init__(self, app, uid, uid_human, device, locale, ip,
+                 app_version, accessed_at=None):
         self.app = app
         self.uid = uid
         self.uid_human = uid_human
         self.device = device
         self.locale = locale
         self.ip = ip
+        self.app_version = app_version
         self.accessed_at = accessed_at or util.now()
 
     def is_developer(self):
@@ -80,18 +82,19 @@ class Context(object):
 
         from .buy import user_exists
 
-        app = request.headers.get('X-VG-App', None)
-        secret = request.headers.get('X-VG-Secret', None)
-        t = Ticket.decode(request.headers.get('X-VG-Ticket', None))
+        headers= request.headers
+        app = headers.get('X-VG-App', None)
+        secret = headers.get('X-VG-Secret', None)
+        t = Ticket.decode(headers.get('X-VG-Ticket', None))
         uid = t.uid if t is not None else None
         uid_human = ''
-        device = request.headers.get('X-VG-Device', '')
+        device = headers.get('X-VG-Device', '')
         locale = '' # TODO: get
         ip = request.remote_addr
+        app_version = headers.get('X-VG-AppVersion', 0)
 
         if not app or not secret:
             raise VGError(E_ILLEGAL_APP)
-
 
         with db.open_session() as session:
             # check app
@@ -111,9 +114,9 @@ class Context(object):
                     and not user_exists(session, uid):
                     raise VGError(E_ILLEGAL_USER)
 
-                # TODO: get uid_human
+                    # TODO: get uid_human
 
-        return Context(app, uid, uid_human, device, locale, ip)
+        return Context(app, uid, uid_human, device, locale, ip, app_version)
 
 
 def need_developer(f):
@@ -126,6 +129,7 @@ def need_developer(f):
 
     return decorator
 
+
 def need_buyer(f):
     @functools.wraps(f)
     def decorator(*args, **kwargs):
@@ -135,6 +139,7 @@ def need_buyer(f):
         return f(*args, **kwargs)
 
     return decorator
+
 
 def need_user(f):
     @functools.wraps(f)

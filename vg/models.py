@@ -17,13 +17,14 @@ BaseModel = declarative_base()
 
 
 class JSONSupport(object):
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         raise NotImplementedError()
 
-    def _json_col(self, col_filter, jo, col, v):
+    def _json_col(self, col_filter, jo, col, v, **kwargs):
         if col_filter is not None:
-            if col_filter(self, col):
-                jo[col] = v
+            new_col = col_filter(self, col, **kwargs)
+            if new_col is not None:
+                jo[new_col] = v
         else:
             jo[col] = v
 
@@ -39,7 +40,7 @@ class Assets(JSONSupport):
                       self.second_currency,
                       self.goods.copy())
 
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         return {
             'primary_currency': self.primary_currency,
             'second_currency': self.second_currency,
@@ -115,20 +116,20 @@ class Developer(BaseModel, JSONSupport):
     desc = Column(String)
     apps = relationship("App")
 
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         jo = dict()
-        self._json_col(col_filter, jo, 'id', self.id)
-        self._json_col(col_filter, jo, 'email', self.email)
-        self._json_col(col_filter, jo, 'password', self.password)
+        self._json_col(col_filter, jo, 'id', self.id, **kwargs)
+        self._json_col(col_filter, jo, 'email', self.email, **kwargs)
+        self._json_col(col_filter, jo, 'password', self.password, **kwargs)
         self._json_col(col_filter, jo, 'created_at',
-                       self.created_at)
+                       self.created_at, **kwargs)
         self._json_col(col_filter, jo, 'updated_at',
-                       self.updated_at)
+                       self.updated_at, **kwargs)
         self._json_col(col_filter, jo, 'disabled_at',
-                       self.disabled_at)
-        self._json_col(col_filter, jo, 'name', self.name)
-        self._json_col(col_filter, jo, 'desc', self.desc)
-        self._json_col(col_filter, jo, 'apps', self.apps)
+                       self.disabled_at, **kwargs)
+        self._json_col(col_filter, jo, 'name', self.name, **kwargs)
+        self._json_col(col_filter, jo, 'desc', self.desc, **kwargs)
+        self._json_col(col_filter, jo, 'apps', self.apps, **kwargs)
         return jo
 
 
@@ -144,19 +145,20 @@ class App(BaseModel, JSONSupport):
     categories = relationship('Category')
     options = Column(JSONObjectType)
 
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         jo = dict()
-        self._json_col(col_filter, jo, 'id', self.id)
+        self._json_col(col_filter, jo, 'id', self.id, **kwargs)
         self._json_col(col_filter, jo, 'created_at',
-                       self.created_at)
+                       self.created_at, **kwargs)
         self._json_col(col_filter, jo, 'updated_at',
-                       self.updated_at)
+                       self.updated_at, **kwargs)
         self._json_col(col_filter, jo, 'secret',
-                       self.secret)
-        self._json_col(col_filter, jo, 'name', self.name)
-        self._json_col(col_filter, jo, 'owner', self.owner)
-        self._json_col(col_filter, jo, 'options', self.options)
-        self._json_col(col_filter, jo, 'categories', self.categories)
+                       self.secret, **kwargs)
+        self._json_col(col_filter, jo, 'name', self.name, **kwargs)
+        self._json_col(col_filter, jo, 'owner', self.owner, **kwargs)
+        self._json_col(col_filter, jo, 'options', self.options, **kwargs)
+        self._json_col(col_filter, jo, 'categories',
+                       self.categories, **kwargs)
         return jo
 
 
@@ -170,16 +172,16 @@ class Category(BaseModel, JSONSupport):
     name = Column(MTextType)
     desc = Column(MTextType)
 
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         jo = dict()
-        self._json_col(col_filter, jo, 'app', self.app)
-        self._json_col(col_filter, jo, 'id', self.id)
+        self._json_col(col_filter, jo, 'app', self.app, **kwargs)
+        self._json_col(col_filter, jo, 'id', self.id, **kwargs)
         self._json_col(col_filter, jo, 'created_at',
-                       self.created_at)
+                       self.created_at, **kwargs)
         self._json_col(col_filter, jo, 'updated_at',
-                       self.updated_at)
-        self._json_col(col_filter, jo, 'name', self.name)
-        self._json_col(col_filter, jo, 'desc', self.desc)
+                       self.updated_at, **kwargs)
+        self._json_col(col_filter, jo, 'name', self.name, **kwargs)
+        self._json_col(col_filter, jo, 'desc', self.desc, **kwargs)
         return jo
 
 
@@ -205,16 +207,19 @@ class User(BaseModel, JSONSupport):
                       self.goods)
 
 
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         jo = dict()
-        self._json_col(col_filter, jo, 'id', self.id)
-        self._json_col(col_filter, jo, 'app', self.app)
-        self._json_col(col_filter, jo, 'created_at', self.created_at)
-        self._json_col(col_filter, jo, 'updated_at', self.updated_at)
-        self._json_col(col_filter, jo, 'disabled_at', self.disabled_at)
-        self._json_col(col_filter, jo, 'human', self.human)
-        self._json_col(col_filter, jo, 'app_data', self.app_data)
-        self._json_col(col_filter, jo, 'assets', self.assets)
+        self._json_col(col_filter, jo, 'id', self.id, **kwargs)
+        self._json_col(col_filter, jo, 'app', self.app, **kwargs)
+        self._json_col(col_filter, jo, 'created_at',
+                       self.created_at, **kwargs)
+        self._json_col(col_filter, jo, 'updated_at',
+                       self.updated_at, **kwargs)
+        self._json_col(col_filter, jo, 'disabled_at',
+                       self.disabled_at, **kwargs)
+        self._json_col(col_filter, jo, 'human', self.human, **kwargs)
+        self._json_col(col_filter, jo, 'app_data', self.app_data, **kwargs)
+        self._json_col(col_filter, jo, 'assets', self.assets, **kwargs)
         return jo
 
 
@@ -294,49 +299,57 @@ class Goods(BaseModel, JSONSupport):
     def is_package(self):
         return self.content_type == Goods.CT_PACKAGE
 
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         jo = dict()
-        self._json_col(col_filter, jo, 'id', self.id)
-        self._json_col(col_filter, jo, 'app', self.app)
-        self._json_col(col_filter, jo, 'category', self.category)
-        self._json_col(col_filter, jo, 'version', self.version)
-        self._json_col(col_filter, jo, 'publisher', self.publisher)
-        self._json_col(col_filter, jo, 'created_at', self.created_at)
-        self._json_col(col_filter, jo, 'updated_at', self.updated_at)
-        self._json_col(col_filter, jo, 'disabled_at', self.disabled_at)
-        self._json_col(col_filter, jo, 'tags', self.tags)
-        self._json_col(col_filter, jo, 'logo_url', self.logo_url)
-        self._json_col(col_filter, jo, 'preview_urls', self.preview_urls)
-        self._json_col(col_filter, jo, 'name', self.name)
-        self._json_col(col_filter, jo, 'desc', self.desc)
-        self._json_col(col_filter, jo, 'publisher_info', self.publisher_info)
-        self._json_col(col_filter, jo, 'app_data', self.app_data)
-        self._json_col(col_filter, jo, 'paid_type', self.paid_type)
+        self._json_col(col_filter, jo, 'id', self.id, **kwargs)
+        self._json_col(col_filter, jo, 'app', self.app, **kwargs)
+        self._json_col(col_filter, jo, 'category', self.category, **kwargs)
+        self._json_col(col_filter, jo, 'version', self.version, **kwargs)
+        self._json_col(col_filter, jo, 'publisher', self.publisher, **kwargs)
+        self._json_col(col_filter, jo, 'created_at',
+                       self.created_at, **kwargs)
+        self._json_col(col_filter, jo, 'updated_at',
+                       self.updated_at, **kwargs)
+        self._json_col(col_filter, jo, 'disabled_at',
+                       self.disabled_at, **kwargs)
+        self._json_col(col_filter, jo, 'tags', self.tags, **kwargs)
+        self._json_col(col_filter, jo, 'logo_url', self.logo_url, **kwargs)
+        self._json_col(col_filter, jo, 'preview_urls',
+                       self.preview_urls, **kwargs)
+        self._json_col(col_filter, jo, 'name', self.name, **kwargs)
+        self._json_col(col_filter, jo, 'desc', self.desc, **kwargs)
+        self._json_col(col_filter, jo, 'publisher_info',
+                       self.publisher_info, **kwargs)
+        self._json_col(col_filter, jo, 'app_data', self.app_data, **kwargs)
+        self._json_col(col_filter, jo, 'paid_type', self.paid_type, **kwargs)
         self._json_col(col_filter, jo, 'primary_currency',
-                       self.primary_currency)
+                       self.primary_currency, **kwargs)
         self._json_col(col_filter, jo, 'second_currency',
-                       self.second_currency)
-        self._json_col(col_filter, jo, 'real_money', self.real_money)
+                       self.second_currency, **kwargs)
+        self._json_col(col_filter, jo, 'real_money',
+                       self.real_money, **kwargs)
         self._json_col(col_filter, jo, 'discounted_primary_currency',
-                       self.discounted_primary_currency)
+                       self.discounted_primary_currency, **kwargs)
         self._json_col(col_filter, jo, 'discounted_second_currency',
-                       self.discounted_second_currency)
+                       self.discounted_second_currency, **kwargs)
         self._json_col(col_filter, jo, 'discounted_real_money',
-                       self.discounted_real_money)
+                       self.discounted_real_money, **kwargs)
         self._json_col(col_filter, jo, 'pay_info', self.pay_info)
         self._json_col(col_filter, jo, 'discount', self.discount)
         self._json_col(col_filter, jo, 'consumable', self.consumable)
-        self._json_col(col_filter, jo, 'limit_per_user', self.limit_per_user)
+        self._json_col(col_filter, jo, 'limit_per_user',
+                       self.limit_per_user, **kwargs)
         self._json_col(col_filter, jo, 'app_min_version_ard',
-                       self.app_min_version_ard)
+                       self.app_min_version_ard, **kwargs)
         self._json_col(col_filter, jo, 'app_max_version_ard',
-                       self.app_max_version_ard)
+                       self.app_max_version_ard, **kwargs)
         self._json_col(col_filter, jo, 'app_min_version_ios',
-                       self.app_min_version_ios)
+                       self.app_min_version_ios, **kwargs)
         self._json_col(col_filter, jo, 'app_max_version_ios',
-                       self.app_max_version_ios)
-        self._json_col(col_filter, jo, 'content_type', self.content_type)
-        self._json_col(col_filter, jo, 'content', self.content)
+                       self.app_max_version_ios, **kwargs)
+        self._json_col(col_filter, jo, 'content_type',
+                       self.content_type, **kwargs)
+        self._json_col(col_filter, jo, 'content', self.content, **kwargs)
         return jo
 
 
@@ -384,29 +397,37 @@ class History(BaseModel, JSONSupport):
             return ''
 
 
-    def to_json_obj(self, col_filter=None):
+    def to_json_obj(self, col_filter=None, **kwargs):
         jo = dict()
-        self._json_col(col_filter, jo, 'id', self.id)
-        self._json_col(col_filter, jo, 'app', self.app)
-        self._json_col(col_filter, jo, 'category', self.category)
-        self._json_col(col_filter, jo, 'buyer', self.buyer)
-        self._json_col(col_filter, jo, 'buyer_human', self.buyer_human)
-        self._json_col(col_filter, jo, 'goods', self.goods)
-        self._json_col(col_filter, jo, 'parent_goods', self.parent_goods)
-        self._json_col(col_filter, jo, 'count', self.count)
-        self._json_col(col_filter, jo, 'created_at', self.created_at)
-        self._json_col(col_filter, jo, 'type', self.type)
-        self._json_col(col_filter, jo, 'app_data', self.app_data)
+        self._json_col(col_filter, jo, 'id', self.id, **kwargs)
+        self._json_col(col_filter, jo, 'app', self.app, **kwargs)
+        self._json_col(col_filter, jo, 'category', self.category, **kwargs)
+        self._json_col(col_filter, jo, 'buyer', self.buyer, **kwargs)
+        self._json_col(col_filter, jo, 'buyer_human',
+                       self.buyer_human, **kwargs)
+        self._json_col(col_filter, jo, 'goods', self.goods, **kwargs)
+        self._json_col(col_filter, jo, 'parent_goods',
+                       self.parent_goods, **kwargs)
+        self._json_col(col_filter, jo, 'count', self.count, **kwargs)
+        self._json_col(col_filter, jo, 'created_at',
+                       self.created_at, **kwargs)
+        self._json_col(col_filter, jo, 'type',
+                       self.type, **kwargs)
+        self._json_col(col_filter, jo, 'app_data',
+                       self.app_data, **kwargs)
         self._json_col(col_filter, jo, 'cost_currency_type',
-                       self.cost_currency_type)
-        self._json_col(col_filter, jo, 'cost', self.cost)
+                       self.cost_currency_type, **kwargs)
+        self._json_col(col_filter, jo, 'cost', self.cost, **kwargs)
         self._json_col(col_filter, jo, 'discount',
-                       self.discount)
-        self._json_col(col_filter, jo, 'pay_channel', self.pay_channel)
-        self._json_col(col_filter, jo, 'pay_id', self.pay_id)
-        self._json_col(col_filter, jo, 'buyer_device', self.buyer_device)
-        self._json_col(col_filter, jo, 'buyer_locale', self.buyer_locale)
-        self._json_col(col_filter, jo, 'buyer_ip', self.buyer_ip)
+                       self.discount, **kwargs)
+        self._json_col(col_filter, jo, 'pay_channel',
+                       self.pay_channel, **kwargs)
+        self._json_col(col_filter, jo, 'pay_id', self.pay_id, **kwargs)
+        self._json_col(col_filter, jo, 'buyer_device',
+                       self.buyer_device, **kwargs)
+        self._json_col(col_filter, jo, 'buyer_locale',
+                       self.buyer_locale, **kwargs)
+        self._json_col(col_filter, jo, 'buyer_ip', self.buyer_ip, **kwargs)
         return jo
 
 

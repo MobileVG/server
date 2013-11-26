@@ -4,29 +4,32 @@ from flask import Blueprint, jsonify, request, g
 from .logic import *
 from ..gv import db
 from . import util
-from ..util import json_api, ColumnFilter, ColumnFor, MText
+from ..util import json_api, ColumnFilter, WithColumns, MText
 from ..context import Ticket, need_developer
 
 mod = Blueprint('PubAPIs', __name__)
 
+_GOODS_COLS = [
+    'id', 'category', 'version', 'publisher',
+    'created_at', 'updated_at', 'disabled_at',
+    'tags', 'logo_url', 'preview_urls',
+    'name', 'desc', 'publisher_info', 'app_data',
+    'paid_type', 'primary_currency',
+    'second_currency', 'real_money',
+    'pay_info', 'discount',
+    'consumable', 'limit_per_user',
+    'app_min_version_ard', 'app_max_version_ard',
+    'app_min_version_ios', 'app_max_version_ios',
+    'content_type', 'content',
+    'parent', 'subs']
 
-COLUMN_FILTER = ColumnFilter(None,
-    ColumnFor(Developer, excludes=['password', 'disabled_at']),
-    ColumnFor(App, excludes=['secret', 'owner']),
-    ColumnFor(Category, excludes=['app']),
-    ColumnFor(Goods, includes=['id', 'category', 'version', 'publisher',
-                               'created_at', 'updated_at', 'disabled_at',
-                               'tags', 'logo_url', 'preview_urls',
-                               'name', 'desc', 'publisher_info', 'app_data',
-                               'paid_type', 'primary_currency',
-                               'second_currency', 'real_money',
-                               'pay_info', 'discount',
-                               'consumable', 'limit_per_user',
-                               'app_min_version_ard', 'app_max_version_ard',
-                               'app_min_version_ios', 'app_max_version_ios',
-                               'content_type', 'content',
-                               'parent', 'subs'])
-)
+COLUMN_FILTER = ColumnFilter({
+    Developer: WithColumns(excludes=['password', 'disabled_at']),
+    App: WithColumns(excludes=['secret', 'owner']),
+    Category: WithColumns(excludes=['app']),
+    Goods: WithColumns(includes=_GOODS_COLS),
+}),
+
 
 # developer
 
@@ -107,12 +110,11 @@ def create_goods_api():
     content_type = util.parse_int(args['content_type'])
     content = args.get('content', '')
 
-
     ctx = g.context
     with db.open_session() as session:
         goods = Goods(app=ctx.app,
                       category=category,
-                      publisher = ctx.uid,
+                      publisher=ctx.uid,
                       tags=tags,
                       logo_url=logo_url,
                       preview_urls=preview_urls,
@@ -133,10 +135,9 @@ def create_goods_api():
                       app_min_version_ios=app_min_version_ios,
                       app_max_version_ios=app_max_version_ios,
                       content_type=content_type,
-                      content=content,)
+                      content=content, )
         goods = create_goods(session, goods)
         return util.to_json_obj(goods, col_filter=COLUMN_FILTER)
-
 
 
 # For develop
@@ -148,12 +149,13 @@ def gen_ticket_api():
     uid = request.args['uid']
     return Ticket(uid).encode()
 
+
 @mod.route('/_dev/parse_ticket')
 @json_api
 def parse_ticket_api():
     t = request.args['ticket']
     t1 = Ticket.decode(t)
-    return {'uid':t1.uid, 'dt':t1.dt}
+    return {'uid': t1.uid, 'dt': t1.dt}
 
 
 @mod.route('/_dev/whoami')
