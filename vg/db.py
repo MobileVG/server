@@ -9,8 +9,10 @@ import json
 from .util import u_, MText
 from . import util
 
+
 class StringsType(TypeDecorator):
     impl = VARCHAR
+
     def process_bind_param(self, value, dialect):
         if value is None:
             return ''
@@ -23,6 +25,7 @@ class StringsType(TypeDecorator):
             return list()
         else:
             return u_(value).split(',')
+
 
 class JSONObjectType(TypeDecorator):
     impl = TEXT
@@ -40,6 +43,7 @@ class JSONObjectType(TypeDecorator):
         else:
             return json.loads(value)
 
+
 class JSONArrayType(TypeDecorator):
     impl = TEXT
 
@@ -55,6 +59,7 @@ class JSONArrayType(TypeDecorator):
             return list()
         else:
             return json.loads(value)
+
 
 class MTextType(TypeDecorator):
     impl = TEXT
@@ -72,6 +77,7 @@ class MTextType(TypeDecorator):
         else:
             d = json.loads(value)
             return MText(d)
+
 
 class DB(object):
     def __init__(self, url):
@@ -92,6 +98,46 @@ class DB(object):
             raise
         finally:
             session.close()
+
+    def execute_file(self, path):
+        conn = self.engine.raw_connection()
+        curs = None
+        try:
+            curs = conn.cursor()
+            with open(path, 'r') as f:
+                curs.execute(f.read())
+        finally:
+            if curs is not None:
+                curs.close()
+
+    @staticmethod
+    def dbapi_conn(session):
+        return session.connection().connection.checkout().connection
+
+    @staticmethod
+    def all_rows(rows):
+        l = []
+        for row in rows:
+            l.append({k: v for k, v in row.items()})
+        return l
+
+    @staticmethod
+    def insert_rows(session, table, rows):
+        from sqlalchemy import text
+
+        def get_fields():
+            l = set()
+            for row in rows:
+                for f in row.keys():
+                    l.add(f)
+            return list(l)
+
+        fields = get_fields()
+        fields_s = ','.join(['`%s`' % f for f in fields])
+        fields_p = ','.join([':%s' % f for f in fields])
+        sql = ("--INSERT INTO `%s` (%s) VALUES (%s);"
+               % (table, fields_s, fields_p))[2:]
+        session.execute(text(sql), rows)
 
 
 def create_db(app):

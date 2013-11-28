@@ -4,6 +4,7 @@ __all__ = ['app', 'db', 'start_server']
 
 import logging
 from .gv import app, db
+from .db import DB
 
 
 def start_server():

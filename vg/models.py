@@ -97,8 +97,8 @@ class Assets(JSONSupport):
         if with_currency:
             d['primary_currency'] = self.primary_currency
             d['second_currency'] = self.second_currency
-        session.query(User)\
-            .filter(User.id == uid)\
+        session.query(User) \
+            .filter(User.id == uid) \
             .update(d)
         return self
 
@@ -205,7 +205,6 @@ class User(BaseModel, JSONSupport):
         return Assets(self.primary_currency,
                       self.second_currency,
                       self.goods)
-
 
     def to_json_obj(self, col_filter=None, **kwargs):
         jo = dict()

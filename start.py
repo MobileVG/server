@@ -10,6 +10,7 @@ def print_usage():
     print("Usage:")
     print("  ./start.py debug|release")
 
+
 def main(argv):
     if len(argv) < 1:
         print_usage()
@@ -20,6 +21,7 @@ def main(argv):
     os.environ['VG_ENV'] = argv[0]
     import vg
     vg.start_server()
+
 
 if __name__ == '__main__':
     main(sys.argv[1:])

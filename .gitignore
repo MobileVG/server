@@ -40,6 +40,7 @@ nosetests.xml
 # cfg
 config/debug*.cfg
 config/local*.cfg
+config/test*.cfg
 
 # local
 local*.py
