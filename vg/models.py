@@ -288,8 +288,15 @@ class Goods(BaseModel, JSONSupport):
             if self.real_money is not None else None
 
     @hybrid_property
-    def subs(self):
+    def content_as_subs(self):
         if self.is_package:
+            return util.parse_json_dict(self.content, default={})
+        else:
+            return {}
+
+    @hybrid_property
+    def content_as_currency(self):
+        if self.is_currency:
             return util.parse_json_dict(self.content, default={})
         else:
             return {}
@@ -297,6 +304,10 @@ class Goods(BaseModel, JSONSupport):
     @hybrid_property
     def is_package(self):
         return self.content_type == Goods.CT_PACKAGE
+
+    @hybrid_property
+    def is_currency(self):
+        return self.content_type == Goods.CT_CONCURRENCY
 
     def to_json_obj(self, col_filter=None, **kwargs):
         jo = dict()

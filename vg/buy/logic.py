@@ -147,7 +147,7 @@ def _expand_goods(session, goods_ids, cts=None):
         if goods.id not in d:
             d[goods.id] = goods
             if goods.is_package:
-                for k in goods.subs.keys():
+                for k in goods.content_as_subs.keys():
                     sub_ids.add(k)
     if sub_ids:
         sub_goods_list = list_goods(session, util.as_list(sub_ids), cts=cts)
@@ -238,7 +238,7 @@ def _buyable(session, ctx, cost_type, goods_id, count, assets,
         if cr != E_OK:
             return cr
         cr = E_TOO_MANY_GOODS
-        subs = goods.subs
+        subs = goods.content_as_subs
         for sub_id, sub_count in subs.items():
             cr = buyable0(sub_id, sub_count * count, True)
             if cr == E_OK:
@@ -277,7 +277,16 @@ def buy(session, ctx, cost_type, goods_id, count,
 
         # modify assets
         if not goods0.is_package:
-            assets.incr_goods(goods_id0, count0, goods0.limit_per_user)
+            if goods0.is_currency:
+                currency = goods0.content_as_currency
+                pc = currency.get('primary')
+                sc = currency.get('second')
+                if pc is not None and long(pc) > 0:
+                    assets.incr_primary_currency(long(pc))
+                if sc is not None and long(sc) > 0:
+                    assets.incr_second_currency(long(sc))
+            else:
+                assets.incr_goods(goods_id0, count0, goods0.limit_per_user)
 
         # update sales_count
         session.query(Goods).filter(Goods.id == goods0.id) \
@@ -348,7 +357,7 @@ def buy(session, ctx, cost_type, goods_id, count,
 
     buy0(goods_id, count, None)
     if goods.is_package:
-        subs = goods.subs
+        subs = goods.content_as_subs
         for sub_id, sub_count in subs.items():
             buy0(sub_id, count * sub_count, goods_id)
 
@@ -451,7 +460,7 @@ def consume(session, ctx, goods_id, count, app_data=None):
     if not goods.is_package:
         consume0(goods_id, count)
     else:
-        subs = goods.subs
+        subs = goods.content_as_subs
         for sub_id, sub_count in subs.items():
             consume0(sub_id, count * sub_count)
     assets.save_to_user(session, ctx.uid, with_currency=False)
