@@ -32,6 +32,7 @@ def test_list_category_api():
     rv = app.get('/api/1/buy/category/list', headers=_HEADERS)
     code, data = parse_api_resp(rv)
     assert code == 0
+    assert len(data) == 2
 
 
 #####################################################
@@ -62,11 +63,15 @@ DEVELOPER_ROWS = [{'name': 'Gao Rongxin',
 
 HISTORY_ROWS = []
 
+WP1_ID = 'gd131115g5vEv3.oAGt.131119083540EPsL'
+WP2_ID = 'gd131115g5vEv3.oAGt.131119083617Mf17'
+WP_PKG_ID = 'gd131115g5vEv3.oAGt.131121064049IfTC'
+C1_ID = 'gd131115g5vEv3.oAGt.131119083622J7fR'
 GOODS_ROWS = [
     {'paid_type': 1, 'pay_info': '{}', 'app': 'd131115g5vEv3.oAGt',
      'updated_at': datetime.datetime(2013, 11, 19, 8, 35, 40),
      'real_money': None, 'app_data': '{}',
-     'id': 'gd131115g5vEv3.oAGt.131119083540EPsL', 'category': 'wp',
+     'id': WP1_ID, 'category': 'wp',
      'content': 'http://www.baidu.com', 'version': 1384821340981L,
      'publisher_info': '{"name": "GaoRongxin"}', 'logo_url': '',
      'app_min_version_ios': 0L, 'tags': '', 'limit_per_user': 100L,
@@ -81,7 +86,7 @@ GOODS_ROWS = [
     {'paid_type': 1, 'pay_info': '{}', 'app': 'd131115g5vEv3.oAGt',
      'updated_at': datetime.datetime(2013, 11, 19, 8, 36, 17),
      'real_money': None, 'app_data': '{}',
-     'id': 'gd131115g5vEv3.oAGt.131119083617Mf17', 'category': 'wp',
+     'id': WP2_ID, 'category': 'wp',
      'content': 'Text1', 'version': 1384821377406L,
      'publisher_info': '{"name": "GaoRongxin"}', 'logo_url': '',
      'app_min_version_ios': 0L, 'tags': '', 'limit_per_user': 200L,
@@ -96,7 +101,7 @@ GOODS_ROWS = [
     {'paid_type': 1, 'pay_info': '{}', 'app': 'd131115g5vEv3.oAGt',
      'updated_at': datetime.datetime(2013, 11, 19, 8, 36, 22),
      'real_money': '{"def": "USD0.99"}', 'app_data': '{}',
-     'id': 'gd131115g5vEv3.oAGt.131119083622J7fR',
+     'id': C1_ID,
      'category': 'Currency', 'content': '{"primary":100}',
      'version': 1384821382094L,
      'publisher_info': '{"name": "GaoRongxin"}', 'logo_url': '',
@@ -112,7 +117,7 @@ GOODS_ROWS = [
     {'paid_type': 1, 'pay_info': '{}', 'app': 'd131115g5vEv3.oAGt',
      'updated_at': datetime.datetime(2013, 11, 21, 6, 40, 49),
      'real_money': None, 'app_data': '{}',
-     'id': 'gd131115g5vEv3.oAGt.131121064049IfTC', 'category': 'wp',
+     'id': WP_PKG_ID, 'category': 'wp',
      'content': '{"gd131115g5vEv3.oAGt.131119083540EPsL":1,"gd131115g5vEv3.oAGt.131119083617Mf17":2}',
      'version': 1384987249104L,
      'publisher_info': '{"name": "GaoRongxin"}', 'logo_url': '',

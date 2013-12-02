@@ -138,7 +138,7 @@ def list_goods(session, goods_ids, cts=None):
     return util.as_list(q.all())
 
 
-def _expand_goods(session, goods_ids, cts=None):
+def expand_goods(session, goods_ids, cts=None):
     # return {good_id: goods} with subs
     d = dict()
     goods_list = list_goods(session, goods_ids, cts=cts)
@@ -171,18 +171,37 @@ def bought_batch(session, app, uid, goods_ids):
     return r
 
 
-def attach_info_to_goods_objs(session, ctx, goods_objs, assets):
-    goods_ids = [goods['id'] for goods in goods_objs]
+def attach_info_to_goods_objs(session, ctx, goods_objs,
+                              expanded_goods, assets):
+    def givable(goods_id0):
+        goods0 = expanded_goods[goods_id0]
+        if ctx.is_user():
+            return assets.has_goods(goods0.id)
+        else:
+            if goods0.paid_type == Goods.PT_ANON_FREE:
+                if goods0.content_type != Goods.CT_PACKAGE:
+                    return True
+            return False
 
     # 'bought'
+    goods_ids = [goods_obj['id'] for goods_obj in goods_objs]
     bought_result = bought_batch(session, ctx.app, ctx.uid, goods_ids)
-    for goods in goods_objs:
-        goods_id = goods['id']
+    for goods_obj in goods_objs:
+        goods_id = goods_obj['id']
         b = bought_result[goods_id]
-        goods['bought'] = b
+        goods_obj['bought'] = b
 
-    # TODO: 'buyable'
-    # TODO: 'givable'
+    # 'buyable'
+    for goods_obj in goods_objs:
+        goods_id = goods_obj['id']
+        goods_obj['buyable'] = _buyable(session, ctx, None, goods_id, 1,
+                                        assets, expanded_goods)
+
+    # 'givable'
+    for goods_obj in goods_objs:
+        goods_id = goods_obj['id']
+        goods_obj['givable'] = givable(goods_id)
+
     return goods_objs
 
 
@@ -228,7 +247,7 @@ def _buyable(session, ctx, cost_type, goods_id, count, assets,
         return E_OK
 
     if not ctx.is_user():
-        return False
+        return E_PERM
 
     goods = expanded_goods[goods_id]
     if not goods.is_package:
@@ -250,7 +269,7 @@ def buyable(session, ctx, cost_type, goods_id, count):
     assets = get_assets(session, ctx.uid)
     if assets is None:
         raise VGError(E_ILLEGAL_USER)
-    expanded_goods = _expand_goods(session, [goods_id])
+    expanded_goods = expand_goods(session, [goods_id])
     cr = _buyable(session, ctx, cost_type, goods_id, count, assets,
                   expanded_goods)
     return cr == E_OK
@@ -344,7 +363,7 @@ def buy(session, ctx, cost_type, goods_id, count,
     assets = get_assets(session, ctx.uid)
     if assets is None:
         raise VGError(E_ILLEGAL_USER)
-    expanded_goods = _expand_goods(session, [goods_id])
+    expanded_goods = expand_goods(session, [goods_id])
     if not expanded_goods:
         raise VGError(E_ILLEGAL_GOODS)
 
@@ -387,7 +406,7 @@ def give_many(session, ctx, good_ids):
     r = {}
 
     assets = get_assets(session, ctx.uid) if ctx.is_user() else None
-    expanded_goods = _expand_goods(session, good_ids,
+    expanded_goods = expand_goods(session, good_ids,
                                    cts=[Goods.CT_URL, Goods.CT_TEXT])
     for goods_id in good_ids:
         gc = None
@@ -452,7 +471,7 @@ def consume(session, ctx, goods_id, count, app_data=None):
     assets = get_assets(session, ctx.uid)
     if assets is None:
         raise VGError(E_ILLEGAL_USER)
-    expanded_goods = _expand_goods(session, [goods_id])
+    expanded_goods = expand_goods(session, [goods_id])
     if not expanded_goods:
         raise VGError(E_ILLEGAL_GOODS)
 

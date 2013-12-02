@@ -93,10 +93,14 @@ def query_goods_api():
     ctx = g.context
     with db.open_session() as session:
         goods = query_goods(session, ctx, **args)
+        expanded_goods = expand_goods(session,
+                                      [goods0.id for goods0 in goods])
         goods_objs = util.to_json_obj(goods, col_filter=COLUMN_FILTER,
                                       context=ctx)
+
         assets = get_assets(session, ctx.uid)
-        attach_info_to_goods_objs(session, ctx, goods_objs, assets)
+        attach_info_to_goods_objs(session, ctx, goods_objs, expanded_goods,
+                                  assets)
         return goods_objs
 
 @mod.route('/buy/buy')
