@@ -23,9 +23,16 @@ app.register_blueprint(buy_api_mod, url_prefix='/api/1')
 app.register_blueprint(pub_api_mod, url_prefix='/api/1')
 app.register_blueprint(pub_pages_mod)
 
+
 from .context import Context
 
 
 @app.before_request
 def before_request():
     g.context = Context.from_request()
+
+from .errors import VGError
+@app.errorhandler(VGError)
+def on_error(e):
+    raise e
+    #return {'code': e.code, 'error_msg': e.msg}

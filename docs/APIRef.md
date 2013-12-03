@@ -4,12 +4,12 @@
 
 在调用每个API时，都需要附加一些参数，这些参数如下:
 
-<table>
+<table width="100%">
 <thead>
     <tr>
-        <th>Name</th>
-        <th>Type</th>
-        <th>Description</th>
+        <th width="20%">Name</th>
+        <th width="10%">Type</th>
+        <th width="70%">Description</th>
     </tr>
 </thead>
 <tbody>

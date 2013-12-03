@@ -210,22 +210,19 @@ def list_get(l, idx, default=None):
     return l[idx] if len(l) > idx else default
 
 
+JSON_CONTENT_TYPE = 'application/json; charset=utf-8'
+
+
 # JSON api
 def json_api(f):
-    JSON_CONTENT_TYPE = 'application/json; charset=utf-8'
-
     @functools.wraps(f)
     def decorator(*args, **kwargs):
-        try:
-            r = f(*args, **kwargs)
-            if isinstance(r, Response):
-                return r
-            ro = {'code': 0, 'data': r}
-        except VGError as e:
-            ro = {'code': e.code, 'error_msg': e.msg}
-            #except:
-        #    ro = {'code':E_UNKNOWN, 'error_msg':'Unknown error'}
-        return Response(to_json(ro, human=True), \
+        r = f(*args, **kwargs)
+        if isinstance(r, Response):
+            return r
+        ro = {'code': 0, 'data': r}
+
+        return Response(to_json(ro, human=True),
                         content_type=JSON_CONTENT_TYPE)
 
     return decorator
@@ -268,6 +265,7 @@ def parse_bool(s, default=None):
         return False
     else:
         raise ValueError()
+
 
 def parse_strings(s, sep=','):
     return s.split(sep) if s else []
